@@ -29,9 +29,18 @@ analysis are provided (selected with `--approach`) and compared in the report:
 All approaches return the same result. Ties (same number of co-occurrences) are broken
 deterministically by choosing the smallest pair in (latitude, longitude) lexicographic order.
 
-**Rounding**: coordinates are rounded to one decimal with *round half up* (ties away from zero:
-`11.255 → 11.3`, `-122.85 → -122.9`) in exact decimal arithmetic (`BigDecimal`), not on `Double`, whose
-binary representation would round values such as `37.35` down.
+**Rounding**: coordinates are rounded to the nearest tenth in exact decimal arithmetic (`BigDecimal`
+on the CSV string, never on a `Double`). The assignment does not say how to round a value exactly
+half-way between two tenths, so the convention is selectable with `--rounding`:
+
+| mode | ties | example | result on the full dataset |
+|---|---|---|---|
+| `half-up` *(default)* | away from zero (`BigDecimal` `HALF_UP`) | `-122.85 → -122.9` | same pair, 10,014 days |
+| `half-even` | to the even digit | `-122.85 → -122.8` | same pair, 10,014 days |
+| `math-round` | towards +∞, like `math.round(x * 10) / 10.0` | `-122.85 → -122.8` | same pair, 10,032 days |
+
+The winning pair is the same with every convention; only the number of co-occurrence days changes
+(10,259 rows of the full dataset are rounded differently by `half-up` and `math-round`).
 
 ## Result
 
@@ -94,6 +103,7 @@ Command-line arguments:
 | `--approach <name>` | `pruning` | `groupbykey`, `aggregate` or `pruning` |
 | `--partitions <n>` | `spark.default.parallelism` | partitions used by `repartition` and by all the shuffles |
 | `--topk <k>` | `64` | number of most active cells used to compute the lower bound (`pruning` only) |
+| `--rounding <mode>` | `half-up` | how exact ties are rounded: `half-up`, `half-even` or `math-round` |
 
 Besides the result, the job prints a `PRUNING ...` line with the lower bound and the number of
 candidate cells, and a `METRICS {...}` JSON line with the execution time and the

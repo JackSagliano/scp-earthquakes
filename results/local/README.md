@@ -20,3 +20,8 @@ Most active cells: (38.8,-122.8) 11,826 days; (38.8,-122.7) 10,047; (37.6,-118.9
 |days(A) ∩ days(B)| = 10,014 for A=(38.8,-122.8), B=(38.8,-122.7); the 10,014 dates are identical
 to the Spark output. Optimality: count(x,y) <= min(days(x), days(y)) and only A and B are active on
 >= 10,014 days, so every other pair co-occurs at most 8,011 times: the maximum is unique.
+
+## Rounding convention (ties only), full dataset
+10,259 rows are rounded differently by half-up and math-round (negative ties). half-up and half-even: 10,014 days;
+math-round (ties towards +infinity, as math.round(x*10)): 10,032 days. Same pair in all cases.
+Rounding the Double with a symmetric rule gives exactly the same cells as the exact decimal half-up.

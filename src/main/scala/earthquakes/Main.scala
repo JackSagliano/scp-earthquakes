@@ -14,6 +14,7 @@ import org.apache.spark.sql.SparkSession
  *   --approach <name>    groupbykey | aggregate | pruning             [pruning]
  *   --partitions <n>     partitions for repartition and shuffles      [spark.default.parallelism]
  *   --topk <k>           cells used for the lower bound (pruning)     [64]
+ *   --rounding <mode>    half-up | half-even | math-round (ties only) [half-up]
  *
  * Output: first line the pair "((lat1, lon1), (lat2, lon2))", then the days
  * on which the two locations co-occur, in ascending order.
@@ -26,7 +27,8 @@ object Main {
       output: Option[String] = None,
       approach: String = "pruning",
       partitions: Int = 0,
-      topK: Int = 64
+      topK: Int = 64,
+      rounding: String = "half-up"
   )
 
   private def parseArgs(args: Array[String]): Config = {
@@ -37,25 +39,27 @@ object Main {
       case "--approach" :: v :: tail    => loop(tail, c.copy(approach = v.toLowerCase))
       case "--partitions" :: v :: tail  => loop(tail, c.copy(partitions = v.toInt))
       case "--topk" :: v :: tail        => loop(tail, c.copy(topK = v.toInt))
+      case "--rounding" :: v :: tail    => loop(tail, c.copy(rounding = v.toLowerCase))
       case other :: _                   => sys.error(s"Unknown or incomplete argument: $other")
     }
     val c = loop(args.toList, Config())
     require(c.input.nonEmpty, "--input is required")
     require(Set("groupbykey", "aggregate", "pruning")(c.approach), s"unknown approach ${c.approach}")
+    require(Geo.RoundingModes(c.rounding), s"unknown rounding mode ${c.rounding}")
     require(c.partitions >= 0 && c.topK >= 2, "--partitions must be >= 0 and --topk >= 2")
     c
   }
 
   /** CSV rows -> (cell, day). Column positions are taken from the header. */
-  private def loadEvents(spark: SparkSession, path: String): RDD[(Int, Int)] = {
+  private def loadEvents(spark: SparkSession, path: String, rounding: String): RDD[(Int, Int)] = {
     val df = spark.read.option("header", value = true).csv(path)
     val cols = df.columns.map(_.trim.toLowerCase)
     val (iLon, iLat, iDate) = (cols.indexOf("longitude"), cols.indexOf("latitude"), cols.indexOf("date"))
     require(iLon >= 0 && iLat >= 0 && iDate >= 0, s"unexpected header: ${df.columns.mkString(",")}")
 
     df.rdd.map { row =>
-      val lat = Geo.toTenths(row.getString(iLat))
-      val lon = Geo.toTenths(row.getString(iLon))
+      val lat = Geo.toTenths(row.getString(iLat), rounding)
+      val lon = Geo.toTenths(row.getString(iLon), rounding)
       require(math.abs(lat) <= 900 && math.abs(lon) <= 1800, s"coordinates out of range: $row")
       (Geo.cell(lat, lon), Geo.day(row.getString(iDate)))
     }
@@ -76,7 +80,7 @@ object Main {
       val partitions = if (cfg.partitions > 0) cfg.partitions else sc.defaultParallelism
       val t0 = System.nanoTime()
 
-      val parsed = loadEvents(spark, cfg.input)
+      val parsed = loadEvents(spark, cfg.input, cfg.rounding)
       val events = if (cfg.partitions > 0) parsed.repartition(partitions) else parsed
 
       val result = cfg.approach match {
@@ -105,7 +109,7 @@ object Main {
       val executors = sc.statusTracker.getExecutorInfos.length - 1 // minus the driver
       val phases = result.phases.map { case (k, v) => s""""$k":$v""" }.mkString(",")
       println(
-        s"""METRICS {"approach":"${cfg.approach}","partitions":$partitions,""" +
+        s"""METRICS {"approach":"${cfg.approach}","rounding":"${cfg.rounding}","partitions":$partitions,""" +
           s""""inputPartitions":${parsed.getNumPartitions},"defaultParallelism":${sc.defaultParallelism},""" +
           s""""executors":${math.max(executors, 1)},"pair":"${Geo.formatPair(result.pair)}",""" +
           s""""cooccurrences":${result.count},"seconds":${"%.3f".formatLocal(java.util.Locale.ROOT, seconds)},"phasesMs":{$phases}}"""

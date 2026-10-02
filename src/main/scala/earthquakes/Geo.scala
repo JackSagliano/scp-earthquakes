@@ -21,14 +21,31 @@ object Geo {
   private val LonOffset = 1800  // longitude in [-180.0, 180.0] -> [0, 3600]
   private val LonRange  = 3601
 
+  /** How a value exactly half-way between two tenths (e.g. -122.85) is rounded. */
+  val RoundingModes: Set[String] = Set("half-up", "half-even", "math-round")
+
   /**
-   * Rounds a decimal string to one decimal digit, "half up" (ties away from
-   * zero), and returns it as tenths. The computation is done in exact decimal
-   * arithmetic: rounding the Double value would misplace values such as
-   * 37.35, whose binary representation is 37.34999...
+   * Rounds a decimal string to the nearest tenth and returns it as tenths
+   * (e.g. "37.502" -> 375). Only exact ties depend on `mode`:
+   *
+   *  - "half-up" (default): away from zero, the usual "school" rounding and
+   *    BigDecimal's HALF_UP:              11.25 -> 11.3   -122.85 -> -122.9
+   *  - "half-even": banker's rounding:   11.25 -> 11.2   -122.85 -> -122.8
+   *  - "math-round": towards +infinity, i.e. what math.round(x * 10) does:
+   *                                       11.25 -> 11.3   -122.85 -> -122.8
+   *
+   * The computation uses exact decimal arithmetic on the CSV string, so it
+   * never depends on the binary representation of a Double.
    */
-  def toTenths(s: String): Int =
-    new JBigDecimal(s.trim).setScale(1, RoundingMode.HALF_UP).unscaledValue.intValueExact
+  def toTenths(s: String, mode: String = "half-up"): Int = {
+    val x = new JBigDecimal(s.trim)
+    val rm = mode match {
+      case "half-up"    => RoundingMode.HALF_UP
+      case "half-even"  => RoundingMode.HALF_EVEN
+      case "math-round" => if (x.signum < 0) RoundingMode.HALF_DOWN else RoundingMode.HALF_UP
+    }
+    x.setScale(1, rm).unscaledValue.intValueExact
+  }
 
   def cell(latTenths: Int, lonTenths: Int): Int =
     (latTenths + LatOffset) * LonRange + (lonTenths + LonOffset)
