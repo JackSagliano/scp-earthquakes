@@ -33,6 +33,30 @@ deterministically by choosing the smallest pair in (latitude, longitude) lexicog
 `11.255 → 11.3`, `-122.85 → -122.9`) in exact decimal arithmetic (`BigDecimal`), not on `Double`, whose
 binary representation would round values such as `37.35` down.
 
+## Result
+
+On the full dataset (3,445,751 events, 1990-01-01 .. 2023-07-29):
+
+```
+((38.8, -122.8), (38.8, -122.7))
+1990-01-05
+...
+2023-07-29
+```
+
+10,014 days of co-occurrence (3,485 on the trimmed dataset). The result was cross-checked with an
+independent Python implementation (see `results/local/README.md`).
+
+Median execution times on the full dataset (seconds, 4 partitions per core; all the measures are in
+`results/metrics.jsonl`, summarised in `results/summary.csv`):
+
+| cluster | cores | groupbykey | aggregate | pruning |
+|---|---:|---:|---:|---:|
+| single node | 4 | 910 | 805 | 49 |
+| 2 workers | 8 | 323 | 305 | 35 |
+| 3 workers | 12 | 213 | 215 | 37 |
+| 4 workers | 16 | 151 | 152 | 31 |
+
 ## Repository layout
 
 ```
@@ -146,7 +170,7 @@ gcloud dataproc clusters delete scp-w4 --region=europe-west1
 
 `scripts/benchmark.sh <workers>` creates a cluster, runs the whole test matrix (three repetitions of
 `aggregate` and `pruning`, several numbers of partitions, one run of `groupbykey`) and deletes the
-cluster at the end, also on errors. The executors are fixed (2 executors × 2 cores × 5 GB per node,
+cluster at the end, also on errors. The executors are fixed (2 executors × 2 cores × 3 GB per node, driver 2 GB,
 no dynamic allocation) so that runs are comparable.
 
 ```bash

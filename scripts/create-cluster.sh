@@ -5,6 +5,11 @@ source "$(dirname "$0")/config.sh"
 W="${1:?number of workers (0, 2, 3, 4)}"
 NAME="$(cluster_name "$W")"
 
+if gcloud dataproc clusters describe "$NAME" --project "$PROJECT_ID" --region "$REGION" >/dev/null 2>&1; then
+  echo ">> cluster $NAME already exists, reusing it"
+  exit 0
+fi
+
 if [ "$W" -eq 0 ]; then
   SHAPE=(--single-node)
 else

@@ -9,12 +9,13 @@ NAME="$(cluster_name "$W")"
 INPUT="$DATA_FULL"; [ "$DATASET" = "trimmed" ] && INPUT="$DATA_TRIMMED"
 OUT="gs://${BUCKET}/output/${NAME}-${APPROACH}-p${P}-${DATASET}"
 
-# Fixed executors (no dynamic allocation) so that runs are comparable:
-# 2 executors x 2 cores x 5 GB per node (fits the ~12.8 GB YARN memory of an
-# n2-standard-4 together with the application master); on a single-node
-# cluster they share the master.
+# Fixed, identical executors on every cluster (no dynamic allocation) so that
+# runs are comparable: 2 executors x 2 cores x 3 GB per node, driver 2 GB.
+# The memory is sized for the single-node cluster, where driver, executors and
+# all the Hadoop daemons share the 16 GB of one n2-standard-4: with larger
+# executors Dataproc kills the driver because of memory pressure on the master.
 NODES=$(( W == 0 ? 1 : W ))
-PROPS="spark.dynamicAllocation.enabled=false,spark.executor.instances=$((2 * NODES)),spark.executor.cores=2,spark.executor.memory=5g"
+PROPS="spark.dynamicAllocation.enabled=false,spark.executor.instances=$((2 * NODES)),spark.executor.cores=2,spark.executor.memory=3g,spark.driver.memory=2g"
 
 mkdir -p "$RESULTS_DIR"
 LOG="$RESULTS_DIR/logs/${NAME}-${APPROACH}-p${P}-${DATASET}-r${REP}.log"
