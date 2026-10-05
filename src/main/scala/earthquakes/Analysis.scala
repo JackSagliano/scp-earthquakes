@@ -76,7 +76,7 @@ object Analysis {
   private def noPairs: Nothing =
     throw new IllegalStateException("No two distinct locations ever co-occur on the same day")
 
-  // ------------------------------------------------------ 1) groupByKey
+  // 1) groupByKey
 
   /**
    * Baseline, the "textbook" formulation:
@@ -110,7 +110,7 @@ object Analysis {
     Result(bestPair, bestCount, days, log.toList)
   }
 
-  // ------------------------------------------------------ 2) aggregateByKey
+  //  2) aggregateByKey
 
   /**
    * Optimised formulation of the same algorithm:
@@ -136,7 +136,7 @@ object Analysis {
     Result(best._1, best._2, days, log.toList)
   }
 
-  // ------------------------------------------------------ 3) pruning
+  // 3) pruning
 
   /**
    * Exact algorithm that avoids generating most of the pairs.
