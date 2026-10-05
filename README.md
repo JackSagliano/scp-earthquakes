@@ -1,50 +1,32 @@
-# Earthquake co-occurrence analysis — Scala + Spark on Google Cloud Dataproc
+# Co-occorrenza di eventi sismici — Scala + Spark su Dataproc
 
-Project for the *Scalable and Cloud Programming* course, University of Bologna, a.y. 2025-26.
+Progetto per il corso di Scalable and Cloud Programming, Università di Bologna, a.a. 2025-26.
 
-Given a dataset of earthquakes (`longitude,latitude,date`), the program finds the **pair of distinct
-locations that co-occur on the largest number of days** and lists those days in ascending order.
-A location is the pair (latitude, longitude) rounded to the first decimal digit; two events co-occur
-when they fall on the same day (UTC). Duplicated (location, day) events are counted once.
+Legge un CSV di terremoti (`longitude,latitude,date`) e trova le due località distinte che hanno un
+terremoto nello stesso giorno il maggior numero di volte, elencando quei giorni in ordine. Una località
+è la coppia (lat, lon) arrotondata alla prima cifra decimale (~11 km); "stesso giorno" significa lo
+stesso giorno di calendario in UTC. Più terremoti nella stessa cella lo stesso giorno collassano in un
+unico evento (cella, giorno), altrimenti la coppia vincente sarebbe semplicemente una cella con se stessa.
 
-Output on the dataset provided with the assignment (full version):
+L'analisi è implementata tre volte con le API RDD (modello map-reduce) e confrontata nel report:
 
-```
-((lat1, lon1), (lat2, lon2))
-yyyy-mm-dd
-...
-```
+- `groupbykey` — baseline: `distinct` → raggruppa le celle per giorno → emette le coppie →
+  `reduceByKey` → massimo.
+- `aggregate` — i gruppi giornalieri in un unico `aggregateByKey` (deduplica lato map), coppie
+  impacchettate in un `Long`.
+- `pruning` (default) — esatto e molto più veloce: due celle co-occorrono al massimo
+  `min(days(a), days(b))` volte, quindi, trovato un limite inferiore `L`, si accoppiano solo le celle
+  attive in almeno `L` giorni. Sul dataset completo restano 2 celle candidate su 213.062, cioè ~2,5M
+  di coppie invece di ~223M.
 
-## Approaches
+Tutti e tre restituiscono la stessa coppia (i pareggi si risolvono con la coppia minore in ordine
+(lat, lon)). Le coordinate sono arrotondate con `BigDecimal` sulla stringa, non su un `Double`;
+`--rounding` sceglie half-up (default), half-even o math-round — la coppia è identica in tutti e tre i
+casi, cambia solo il numero di giorni (10.014 contro 10.032).
 
-The job is written with the RDD API following the map-reduce model. Three implementations of the same
-analysis are provided (selected with `--approach`) and compared in the report:
+## Risultato
 
-| approach     | idea |
-|--------------|------|
-| `groupbykey` | baseline: `distinct` → `groupByKey(day)` → `flatMap(pairs)` → `reduceByKey` → max |
-| `aggregate`  | one shuffle with map-side de-duplication (`aggregateByKey`), pairs encoded as a primitive `Long` |
-| `pruning` *(default)* | exact algorithm that skips most pairs: two cells cannot co-occur more than `min(days(a), days(b))` times, so after a lower bound `L` is found among the most active cells only cells active on ≥ `L` days are paired |
-
-All approaches return the same result. Ties (same number of co-occurrences) are broken
-deterministically by choosing the smallest pair in (latitude, longitude) lexicographic order.
-
-**Rounding**: coordinates are rounded to the nearest tenth in exact decimal arithmetic (`BigDecimal`
-on the CSV string, never on a `Double`). The assignment does not say how to round a value exactly
-half-way between two tenths, so the convention is selectable with `--rounding`:
-
-| mode | ties | example | result on the full dataset |
-|---|---|---|---|
-| `half-up` *(default)* | away from zero (`BigDecimal` `HALF_UP`) | `-122.85 → -122.9` | same pair, 10,014 days |
-| `half-even` | to the even digit | `-122.85 → -122.8` | same pair, 10,014 days |
-| `math-round` | towards +∞, like `math.round(x * 10) / 10.0` | `-122.85 → -122.8` | same pair, 10,032 days |
-
-The winning pair is the same with every convention; only the number of co-occurrence days changes
-(10,259 rows of the full dataset are rounded differently by `half-up` and `math-round`).
-
-## Result
-
-On the full dataset (3,445,751 events, 1990-01-01 .. 2023-07-29):
+Dataset completo (3.445.751 eventi, 1990–2023):
 
 ```
 ((38.8, -122.8), (38.8, -122.7))
@@ -53,98 +35,55 @@ On the full dataset (3,445,751 events, 1990-01-01 .. 2023-07-29):
 2023-07-29
 ```
 
-10,014 days of co-occurrence (3,485 on the trimmed dataset). The result was cross-checked with an
-independent Python implementation (see `results/local/README.md`).
+10.014 giorni di co-occorrenza (3.485 sul dataset ridotto) — il campo geotermico di The Geysers,
+California. Verificato in modo indipendente con uno script Python (`results/local/`).
 
-Median execution times on the full dataset (seconds, 4 partitions per core; all the measures are in
-`results/metrics.jsonl`, summarised in `results/summary.csv`):
+Tempi mediani, dataset completo (s, 4 partizioni/core; tutte le esecuzioni in `results/metrics.jsonl`):
 
-| cluster | cores | groupbykey | aggregate | pruning |
+| cluster | core | groupbykey | aggregate | pruning |
 |---|---:|---:|---:|---:|
 | single node | 4 | 910 | 805 | 49 |
-| 2 workers | 8 | 323 | 305 | 35 |
-| 3 workers | 12 | 213 | 215 | 37 |
-| 4 workers | 16 | 151 | 152 | 31 |
+| 2 worker | 8 | 323 | 305 | 35 |
+| 3 worker | 12 | 213 | 215 | 37 |
+| 4 worker | 16 | 151 | 152 | 31 |
 
-## Repository layout
+## Build ed esecuzione
 
-```
-build.sbt, project/          sbt build (Scala 2.12.18, Spark 3.5.3 "provided")
-src/main/scala/earthquakes/  Main.scala (CLI, I/O, timing) · Analysis.scala (3 approaches) · Geo.scala (encodings)
-data/sample-spec.csv         the example of the assignment, for a quick local test
-data/sample-ties.csv         synthetic case with ties and duplicates (exercises every branch of `pruning`)
-scripts/                     Dataproc automation (setup, clusters, jobs, benchmark, summary)
-```
-
-## Build
-
-Requirements: JDK 11 or 17 and [sbt](https://www.scala-sbt.org/download).
+Servono JDK 11/17 e sbt.
 
 ```bash
-sbt package
-# -> target/scala-2.12/earthquake-cooccurrence_2.12-1.0.jar
-```
+sbt package        # -> target/scala-2.12/earthquake-cooccurrence_2.12-1.0.jar
 
-## Run locally
-
-```bash
-sbt "run --input data/sample-spec.csv"
-# or, with a local Spark installation:
+# in locale
 spark-submit --master "local[*]" target/scala-2.12/earthquake-cooccurrence_2.12-1.0.jar \
   --input dataset-earthquakes-trimmed.csv --output out --approach pruning
 ```
 
-Command-line arguments:
-
-| argument | default | meaning |
+| argomento | default | significato |
 |---|---|---|
-| `--input <path>` | *(required)* | CSV file (local path or `gs://…`) with header `longitude,latitude,date` |
-| `--output <path>` | none | output directory (overwritten); the result is always printed on stdout too |
-| `--approach <name>` | `pruning` | `groupbykey`, `aggregate` or `pruning` |
-| `--partitions <n>` | `spark.default.parallelism` | partitions used by `repartition` and by all the shuffles |
-| `--topk <k>` | `64` | number of most active cells used to compute the lower bound (`pruning` only) |
-| `--rounding <mode>` | `half-up` | how exact ties are rounded: `half-up`, `half-even` or `math-round` |
+| `--input <path>` | obbligatorio | CSV (locale o `gs://…`), header `longitude,latitude,date` |
+| `--output <path>` | nessuno | directory di output (sovrascritta); il risultato va comunque su stdout |
+| `--approach <name>` | `pruning` | `groupbykey`, `aggregate`, `pruning` |
+| `--partitions <n>` | = core | partizioni per `repartition` e tutti gli shuffle |
+| `--topk <k>` | `64` | celle più attive usate per il limite inferiore (solo pruning) |
+| `--rounding <mode>` | `half-up` | `half-up`, `half-even`, `math-round` |
 
-Besides the result, the job prints a `PRUNING ...` line with the lower bound and the number of
-candidate cells, and a `METRICS {...}` JSON line with the execution time and the
-time of each phase.
+## Dataproc
 
-## Run on Google Cloud Dataproc
-
-All commands can be run from **Cloud Shell** (the `>_` icon in the Cloud console), which already has
-`gcloud` installed and authenticated. From a local terminal, install the
-[gcloud CLI](https://cloud.google.com/sdk/docs/install) and run `gcloud auth login` first.
-
-Settings (project id, region, bucket name, image version) are in `scripts/config.sh`.
-
-### 1. One-time setup
+Da Cloud Shell (gcloud già pronto), o da gcloud locale dopo `gcloud auth login`. Configurazione in
+`scripts/config.sh`.
 
 ```bash
-git clone https://github.com/JackSagliano/<repo-name>.git && cd <repo-name>
-sbt package          # or upload a pre-built JAR
-
-# enables the APIs, creates the bucket and uploads the JAR and the datasets
+git clone https://github.com/JackSagliano/scp-earthquakes.git && cd scp-earthquakes
+sbt package
 ./scripts/setup.sh target/scala-2.12/earthquake-cooccurrence_2.12-1.0.jar \
-                   dataset-earthquakes-full.csv dataset-earthquakes-trimmed.csv
+                   dataset-earthquakes-full.csv dataset-earthquakes-trimmed.csv   # API, bucket, upload
+./scripts/create-cluster.sh 4     # 0 = single node; altrimenti N worker
 ```
 
-Equivalent plain commands:
-
-```bash
-gcloud config set project <PROJECT_ID>
-gcloud services enable dataproc.googleapis.com compute.googleapis.com
-gcloud storage buckets create gs://<BUCKET> --location=europe-west1
-gcloud storage cp target/scala-2.12/earthquake-cooccurrence_2.12-1.0.jar gs://<BUCKET>/jars/
-gcloud storage cp dataset-earthquakes-full.csv gs://<BUCKET>/data/
-```
-
-### 2. Create a cluster
-
-```bash
-./scripts/create-cluster.sh 4        # 1 master + 4 workers; 0 = single node, 2, 3, 4
-```
-
-which runs:
+`create-cluster.sh` esegue la configurazione richiesta (disco da `240` GB e `n2-standard-4` come da
+specifica; `--max-idle=30m` è una mia aggiunta, così un cluster che mi dimentico si cancella da solo
+prima di consumare i crediti):
 
 ```bash
 gcloud dataproc clusters create scp-w4 --region=europe-west1 --image-version=2.2-debian12 \
@@ -152,41 +91,40 @@ gcloud dataproc clusters create scp-w4 --region=europe-west1 --image-version=2.2
   --master-machine-type=n2-standard-4 --worker-machine-type=n2-standard-4 --max-idle=30m
 ```
 
-`--max-idle=30m` deletes the cluster automatically after 30 minutes without jobs, to protect the
-education credits.
-
-### 3. Submit the job
-
 ```bash
+# sottomette un job
 gcloud dataproc jobs submit spark --cluster=scp-w4 --region=europe-west1 \
   --jar=gs://<BUCKET>/jars/earthquake-cooccurrence_2.12-1.0.jar \
   -- --input gs://<BUCKET>/data/dataset-earthquakes-full.csv \
      --output gs://<BUCKET>/output/result --approach pruning --partitions 64
+gcloud storage cat gs://<BUCKET>/output/result/part-00000
 
-gcloud storage cat gs://<BUCKET>/output/result/part-00000     # the result
+# oppure ./scripts/run-job.sh <workers> <approach> <partitions>   (registra anche su results/metrics.jsonl)
+gcloud dataproc clusters delete scp-w4 --region=europe-west1   # a fine lavoro
 ```
 
-or `./scripts/run-job.sh <workers> <approach> <partitions>`, which also stores the metrics in
-`results/metrics.jsonl`.
+## Benchmark
 
-### 4. Delete the cluster
+`scripts/benchmark.sh <workers>` crea un cluster, esegue l'intera matrice di prove (3× `aggregate` e
+`pruning`, una scansione sul numero di partizioni, una esecuzione di `groupbykey`) e lo cancella alla
+fine, anche in caso di errore. Gli executor sono fissati (2 × 2 core × 3 GB per nodo, driver da 2 GB,
+niente allocazione dinamica) per rendere confrontabili le esecuzioni. Nota: sul single node ho dovuto
+abbassare gli executor a 3 GB — a 5 GB il driver veniva continuamente terminato, con driver, executor e
+servizi Hadoop che insieme superavano i 16 GB della macchina.
 
 ```bash
-gcloud dataproc clusters delete scp-w4 --region=europe-west1
-# or ./scripts/delete-cluster.sh 4
+./scripts/benchmark.sh 0   # poi 2, 3, 4
+python3 scripts/summarize.py   # -> results/summary.csv
 ```
 
-### Benchmark
+## Struttura
 
-`scripts/benchmark.sh <workers>` creates a cluster, runs the whole test matrix (three repetitions of
-`aggregate` and `pruning`, several numbers of partitions, one run of `groupbykey`) and deletes the
-cluster at the end, also on errors. The executors are fixed (2 executors × 2 cores × 3 GB per node, driver 2 GB,
-no dynamic allocation) so that runs are comparable.
-
-```bash
-./scripts/benchmark.sh 0     # single node
-./scripts/benchmark.sh 2
-./scripts/benchmark.sh 3
-./scripts/benchmark.sh 4
-python3 scripts/summarize.py # -> results/summary.csv
 ```
+src/main/scala/earthquakes/   Main.scala (CLI, I/O, tempi) · Analysis.scala (3 approcci) · Geo.scala (codifiche)
+data/sample-spec.csv          esempio della specifica  ·  data/sample-ties.csv  pareggi + duplicati (copre pruning)
+scripts/                      automazione Dataproc  ·  results/  metriche e riepilogo
+```
+
+Nota: nell'esempio della specifica il punto `38.147, 13.324` si arrotonda a `(38.1, 13.3)`, non a
+`(38.1, 13.4)`, quindi il programma riporta 2 giorni di co-occorrenza invece di 3 — segue la regola di
+arrotondamento della specifica; è l'esempio svolto a essere incoerente con essa.
