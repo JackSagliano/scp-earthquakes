@@ -1,4 +1,4 @@
-# Co-occorrenza di eventi sismici
+# Co-occorrenza di eventi sismici — Scala + Spark su Dataproc
 
 Progetto per il corso Scalable and Cloud Programming, Università di Bologna, a.a. 2025-26.
 
@@ -18,9 +18,18 @@ sbt package      # -> target/scala-2.12/earthquake-cooccurrence_2.12-1.0.jar
 
 ## Esecuzione in locale
 
+Il modo più semplice, senza installare Spark a parte, è `sbt run`: il `build.sbt` include Spark nel
+classpath durante l'esecuzione locale. (Le virgolette raggruppano gli argomenti per il programma.)
+
 ```
-spark-submit --master "local[*]" target/scala-2.12/earthquake-cooccurrence_2.12-1.0.jar \
-  --input dataset-earthquakes-trimmed.csv --output out --approach pruning
+sbt "run --input data/sample-spec.csv --approach pruning"
+sbt "run --input dataset-earthquakes-trimmed.csv --approach pruning"
+```
+
+In alternativa, con un'installazione locale di Spark, si può usare `spark-submit` sul jar di `sbt package`:
+
+```
+spark-submit --master "local[*]" target/scala-2.12/earthquake-cooccurrence_2.12-1.0.jar --input dataset-earthquakes-trimmed.csv --output out --approach pruning
 ```
 
 | argomento | default | significato |
