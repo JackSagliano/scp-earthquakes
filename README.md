@@ -1,4 +1,4 @@
-# Co-occorrenza di eventi sismici — Scala + Spark su Dataproc
+# Co-occorrenza di eventi sismici
 
 Progetto per il corso Scalable and Cloud Programming, Università di Bologna, a.a. 2025-26.
 
