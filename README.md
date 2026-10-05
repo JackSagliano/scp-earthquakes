@@ -23,7 +23,7 @@ classpath durante l'esecuzione locale. (Le virgolette raggruppano gli argomenti 
 
 ```
 sbt "run --input data/sample-spec.csv --approach pruning"
-sbt "run --input dataset-earthquakes-trimmed.csv --approach pruning"
+sbt "run --input data/dataset-earthquakes-trimmed.csv --approach pruning"
 ```
 
 In alternativa, con un'installazione locale di Spark, si può usare `spark-submit` sul jar di `sbt package`:
